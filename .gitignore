@@ -81,3 +81,6 @@ gradio*
 
 # Database files - README collection
 database/readme_db/
+
+# Generated summary files
+knowledge_db/readme_summary/
