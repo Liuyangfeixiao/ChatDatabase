@@ -44,7 +44,7 @@ class ReadmeSummarizer:
         # 加载.env文件
         load_dotenv()
         
-        self.llm_type = llm_type
+        self.setup_model(llm_type)
         self.setup_logging()
         self.setup_llm(api_key)
         
@@ -63,7 +63,18 @@ class ReadmeSummarizer:
             "密码", "password", "token", "secret", "key", "私钥", "访问令牌",
             "api_key", "access_token", "private_key", "秘钥"
         ]
-    
+
+    def setup_model(self, llm_type:str="qwen"):
+
+        if llm_type.lower() == "zhipu":
+            self.llm_model = "ZhipuAI/GLM-4.5"
+        elif llm_type.lower() == "qwen":
+            self.llm_model = "Qwen/Qwen3-235B-A22B-Thinking-2507"
+        elif llm_type.lower() == "deepseek":
+            self.llm_model = "deepseek-ai/DeepSeek-V3.1"
+        else:
+            self.llm_model = "Qwen/Qwen3-235B-A22B-Thinking-2507"
+
     def setup_logging(self):
         """设置日志"""
         logging.basicConfig(
@@ -74,17 +85,12 @@ class ReadmeSummarizer:
     
     def setup_llm(self, api_key: Optional[str]):
         """设置LLM客户端"""
-        if self.llm_type == "zhipuai":
-            api_key = api_key or os.getenv("ZHIPUAI_API_KEY")
-            if not api_key:
-                raise ValueError("请在.env文件中设置ZHIPUAI_API_KEY或传入api_key参数")
-            self.client = ZhipuAI(api_key=api_key)
-        elif self.llm_type == "openai":
-            api_key = api_key or os.getenv("OPENAI_API_KEY")
-            if not api_key:
-                raise ValueError("请在.env文件中设置OPENAI_API_KEY或传入api_key参数")
-            self.client = OpenAI(api_key=api_key,
-                                 base_url="https://api.chatanywhere.tech/v1")
+        base_url = os.environ["OPENAI_API_BASE"]
+        api_key = api_key or os.environ["OPENAI_API_KEY"]
+        self.client = OpenAI(
+            base_url=base_url,
+            api_key=api_key
+        )
     
     def filter_content(self, content: str) -> str:
         """
@@ -110,96 +116,41 @@ class ReadmeSummarizer:
         
         return filtered_content
     
-    def generate_summary_zhipuai(self, content: str) -> str:
-        """
-        使用智谱AI生成摘要
-        
-        Args:
-            content: 待摘要的内容
-            
-        Returns:
-            生成的摘要
-        """
-        prompt = f"""
-请为以下README内容生成一个简洁的摘要，要求：
-1. 摘要长度不超过200字
-2. 提炼项目的核心内容
-3. 使用中文输出
-4. 保持专业性和准确性
-
-README内容：
-{content}
-
-请生成摘要：
-"""
-        
-        try:
-            response = self.client.chat.completions.create(
-                model="glm-4",
-                messages=[
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.3,
-                max_tokens=300
-            )
-            return response.choices[0].message.content.strip()
-        except Exception as e:
-            self.logger.error(f"智谱AI调用失败: {e}")
-            return f"摘要生成失败: {str(e)}"
-    
-    def generate_summary_openai(self, content: str) -> str:
-        """
-        使用OpenAI生成摘要
-        
-        Args:
-            content: 待摘要的内容
-            
-        Returns:
-            生成的摘要
-        """
-        prompt = f"""
-请为以下README内容生成一个简洁的摘要，要求：
-1. 摘要长度不超过200字
-2. 提炼项目的核心内容
-3. 使用中文输出
-4. 保持专业性和准确性
-
-README内容：
-{content}
-
-请生成摘要：
-"""
-        
-        try:
-            response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.3,
-                max_tokens=300
-            )
-            return response.choices[0].message.content.strip()
-        except Exception as e:
-            self.logger.error(f"OpenAI调用失败: {e}")
-            return f"摘要生成失败: {str(e)}"
-    
     def generate_summary(self, content: str) -> str:
-        """
-        生成摘要
-        
+        """_summary_
+
         Args:
-            content: 待摘要的内容
-            
+            content (str): _description_
+
         Returns:
-            生成的摘要
+            str: _description_
         """
-        if self.llm_type == "zhipuai":
-            return self.generate_summary_zhipuai(content)
-        elif self.llm_type == "openai":
-            return self.generate_summary_openai(content)
-        else:
-            raise ValueError(f"不支持的LLM类型: {self.llm_type}")
+        prompt = f"""
+请为以下README内容生成一个简洁的摘要，要求：
+1. 摘要长度不超过200字
+2. 提炼项目的核心内容
+3. 使用中文输出
+4. 保持专业性和准确性
+
+README内容：
+{content}
+
+请生成摘要：
+"""
+        try:
+            response = self.client.chat.completions.create(
+                model=self.llm_model,
+                messages=[
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                max_tokens=300
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            self.logger.error(f"LLM调用失败: {e}")
+            return f"摘要生成失败: {str(e)}"
+
     
     def read_readme_files(self) -> List[ReadmeInfo]:
         """
@@ -284,7 +235,7 @@ README内容：
             "summary": summary,
             "metadata": metadata,
             "generated_at": str(Path().resolve()),
-            "llm_type": self.llm_type
+            "llm_model": self.llm_model
         }
         
         output_file = self.summary_output_path / f"{repo_name}_summary.json"
@@ -341,13 +292,14 @@ def main():
     parser = argparse.ArgumentParser(description="README文件摘要生成器")
     parser.add_argument(
         "--llm-type", 
-        choices=["zhipuai", "openai"], 
-        default="openai",
+        choices=["zhipuai", "deepseek", "qwen"], 
+        default="qwen",
         help="LLM类型"
     )
     parser.add_argument(
         "--api-key",
-        help="API密钥"
+        help="API密钥",
+        default=None
     )
     
     args = parser.parse_args()
